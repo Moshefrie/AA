@@ -31,22 +31,35 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q ngrok
 
-      - name: פתיחת tunnel
-        run: |
+          - name: פתיחת tunnel
+          run: |
+          # וידוא שהטוקן לא ריק (יעזור לך להבין אם יש בעיה ב-Secrets)
+          if [ -z "${{ secrets.NGROK_TOKEN }}" ]; then echo "Error: NGROK_TOKEN is empty"; exit 1; fi
+          
           ngrok config add-authtoken ${{ secrets.NGROK_TOKEN }}
           nohup ngrok tcp 22 > /tmp/ngrok.log 2>&1 &
-          sleep 5
+          sleep 10 # הגדלת זמן ההמתנה ל-10 שניות
+
+      - name: בדיקת שגיאות ב-ngrok log
+        run: |
+          echo "=== Ngrok Log Output ==="
+          cat /tmp/ngrok.log
+          echo "========================"
 
       - name: הדפסת כתובת החיבור
         run: |
           TUNNEL=$(curl -s http://localhost:4040/api/tunnels | python3 -c "
           import sys, json
-          data = json.load(sys.stdin)
-          url = data['tunnels'][0]['public_url'].replace('tcp://', '')
-          host, port = url.split(':')
-          print(f'Host: {host}')
-          print(f'Port: {port}')
-          print(f'Command: ssh runner@{host} -p {port}')
+          try:
+              data = json.load(sys.stdin)
+              url = data['tunnels'][0]['public_url'].replace('tcp://', '')
+              host, port = url.split(':')
+              print(f'Host: {host}')
+              print(f'Port: {port}')
+              print(f'Command: ssh runner@{host} -p {port}')
+          except Exception as e:
+              print(f'Failed to parse JSON. Error: {e}')
+              sys.exit(1)
           ")
           echo "$TUNNEL"
 
