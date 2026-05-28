@@ -17,7 +17,7 @@ jobs:
 
       - name: הגדרת משתמש וסיסמה
         run: |
-          echo "runner:ssh1234" | sudo chpasswd
+          echo "runner:${{ secrets.SSH_PASSWORD }}" | sudo chpasswd
           sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
           sudo sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
           sudo service ssh start
@@ -47,7 +47,6 @@ jobs:
           print(f'Host: {host}')
           print(f'Port: {port}')
           print(f'Command: ssh runner@{host} -p {port}')
-          print(f'Password: ssh1234')
           ")
           echo "$TUNNEL"
 
