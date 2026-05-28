@@ -11,8 +11,8 @@ jobs:
     steps:
       - name: התקנת Chisel בשרת
         run: |
-          curl -sSL https://github.com/jpillora/chisel/releases/download/v1.10.0/chisel_1.10.0_linux_amd64.tar.gz | tar xz
-          sudo mv chisel /usr/local/bin/
+          # התקנה אוטומטית באמצעות הסקריפט הרשמי של Chisel
+          curl https://i.jpillora.com/chisel! | sudo bash
           chisel --version
 
       - name: הפעלת שרת Chisel ברקע
