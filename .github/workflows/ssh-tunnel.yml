@@ -1,81 +1,66 @@
-name: SSH Tunnel
+name: HTTPS Tunnel (Web Browsing Look)
 
 on:
   workflow_dispatch:
 
 jobs:
-  ssh:
+  tunnel:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
 
     steps:
-      - name: התקנת SSH server
+      - name: התקנת Chisel בשרת
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q openssh-server
-          sudo mkdir -p /var/run/sshd
+          curl -sSL https://github.com/jpillora/chisel/releases/download/v1.10.0/chisel_1.10.0_linux_amd64.tar.gz | tar xz
+          sudo mv chisel /usr/local/bin/
+          chisel --version
 
-      - name: הגדרת משתמש וסיסמה
+      - name: הפעלת שרת Chisel ברקע
         run: |
-          echo "runner:${{ secrets.SSH_PASSWORD }}" | sudo chpasswd
-          sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
-          sudo sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
-          sudo service ssh start
+          # מפעיל שרת Chisel עם שם משתמש וסיסמה מאובטחים
+          nohup chisel server --port 8080 --auth "user:pass123" > /tmp/chisel.log 2>&1 &
+          sleep 2
 
-      - name: התקנת ngrok
+      - name: הפעלת ngrok במצב HTTP (חינמי וללא אשראי)
         run: |
-          curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc \
-            | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
-          echo "deb https://ngrok-agent.s3.amazonaws.com buster main" \
-            | sudo tee /etc/apt/sources.list.d/ngrok.list
-          sudo apt-get update -q
-          sudo apt-get install -y -q ngrok
-
-      - name: פתיחת Tunnel חכמה והדפסת כתובת
-        run: |
-          # 1. בדיקה שהטוקן באמת קיים ב-Secrets
-          if [ -z "${{ secrets.NGROK_TOKEN }}" ]; then 
-            echo "❌ שגיאה קריטית: משתנה הסביבה NGROK_TOKEN ריק! אנא הוסף אותו ב-Settings -> Secrets."
-            exit 1
-          fi
+          # התקנת ngrok
+          curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+          echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
+          sudo apt-get update -q && sudo apt-get install -y -q ngrok
           
-          # 2. הגדרת הטוקן והפעלת ngrok
+          # הגדרת טוקן והפעלה כמנהרת HTTP רגילה
           ngrok config add-authtoken ${{ secrets.NGROK_TOKEN }}
-          nohup ngrok tcp 22 > /tmp/ngrok.log 2>&1 &
+          nohup ngrok http 8080 > /tmp/ngrok.log 2>&1 &
           
-          # 3. המתנה חכמה עד ש-ngrok באמת מוכן
-          echo "⏳ ממתין ל-ngrok שיתחבר לשרתים..."
-          for i in {1..15}; do
-            if curl -s http://localhost:4040/api/tunnels | grep -q "public_url"; then
-              echo "✅ חיבור ngrok נוצר בהצלחה!"
-              break
-            fi
-            sleep 2
-          done
-          
-          # 4. הדפסת הלוג של ngrok (מעולה לזיהוי בעיות אם החיבור נכשל)
+          sleep 8
           echo "=== Ngrok Log ==="
           cat /tmp/ngrok.log
           echo "================="
-          
-          # 5. חילוץ והדפסת פקודת ההתחברות בצורה בטוחה
-          TUNNEL=$(curl -s http://localhost:4040/api/tunnels | python3 -c "
+
+      - name: הדפסת הנחיות התחברות
+        run: |
+          URL=$(curl -s http://localhost:4040/api/tunnels | python3 -c "
           import sys, json
           try:
               data = json.load(sys.stdin)
-              url = data['tunnels'][0]['public_url'].replace('tcp://', '')
-              host, port = url.split(':')
-              print(f'\n🌐 Host: {host}')
-              print(f'🔌 Port: {port}')
-              print(f'💻 Command: ssh runner@{host} -p {port}\n')
-          except Exception as e:
-              print(f'❌ שגיאה בחילוץ הנתונים מ-ngrok. בדוק את הלוג למעלה.')
-              sys.exit(1)
+              print(data['tunnels'][0]['public_url'])
+          except:
+              print('ERROR')
           ")
-          echo "$TUNNEL"
-
-      - name: ממתין לחיבור (60 דקות)
-        run: |
-          echo "✅ השרת פעיל — התחבר מהמחשב שלך!"
-          echo "⏳ ייסגר אחרי 60 דקות"
-          sleep 3600
+          
+          if [ "$URL" = "ERROR" ] || [ -z "$URL" ]; then
+            echo "❌ נכשל בקבלת הכתובת מ-ngrok. בדוק את הלוג למעלה."
+            exit 1
+          fi
+          
+          echo ""
+          echo "✅ הצינור מוכן ומחופש לגלישה רגילה!"
+          echo "🌐 כתובת ה-HTTPS שלך היא: $URL"
+          echo "--------------------------------------------------"
+          echo "💻 פקודה להרצה במחשב שלך בטרמינל:"
+          echo "chisel client --auth user:pass123 $URL 1080:socks"
+          echo "--------------------------------------------------"
+          echo ""
+          
+      - name: שמירת השרת פעיל (שעה אחת)
+        run: sleep 3600
