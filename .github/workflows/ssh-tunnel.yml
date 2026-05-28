@@ -1,0 +1,58 @@
+name: SSH Tunnel
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ssh:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    steps:
+      - name: התקנת SSH server
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q openssh-server
+          sudo mkdir -p /var/run/sshd
+
+      - name: הגדרת משתמש וסיסמה
+        run: |
+          echo "runner:ssh1234" | sudo chpasswd
+          sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          sudo sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          sudo service ssh start
+
+      - name: התקנת ngrok
+        run: |
+          curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc \
+            | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+          echo "deb https://ngrok-agent.s3.amazonaws.com buster main" \
+            | sudo tee /etc/apt/sources.list.d/ngrok.list
+          sudo apt-get update -q
+          sudo apt-get install -y -q ngrok
+
+      - name: פתיחת tunnel
+        run: |
+          ngrok config add-authtoken ${{ secrets.NGROK_TOKEN }}
+          nohup ngrok tcp 22 > /tmp/ngrok.log 2>&1 &
+          sleep 5
+
+      - name: הדפסת כתובת החיבור
+        run: |
+          TUNNEL=$(curl -s http://localhost:4040/api/tunnels | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          url = data['tunnels'][0]['public_url'].replace('tcp://', '')
+          host, port = url.split(':')
+          print(f'Host: {host}')
+          print(f'Port: {port}')
+          print(f'Command: ssh runner@{host} -p {port}')
+          print(f'Password: ssh1234')
+          ")
+          echo "$TUNNEL"
+
+      - name: ממתין לחיבור (60 דקות)
+        run: |
+          echo "✅ השרת פעיל — התחבר מהמחשב שלך!"
+          echo "⏳ ייסגר אחרי 60 דקות"
+          sleep 3600
